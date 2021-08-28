@@ -1,6 +1,8 @@
 import http from "http";
-import WebSocket from "ws";
 import express from "express";
+import { Server } from "socket.io";
+import { instrument } from "@socket.io/admin-ui"
+
 const app = express();
 const port = 3000;
 
@@ -11,34 +13,66 @@ app.get("/", (_, res) => res.render("home"));
 app.get("/*", (_, res) => res.redirect("/"));
 
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
-const sockets = [];
-
 const handleListen = () => console.log(`Listening on http://localhost:${port}`);
-
 server.listen(port, handleListen);
 
-const wsClose = () => {
-    console.log("Disconnected from the Browser");
-};
+const io = new Server(server, {
+  cors: {
+    origin: ["https://admin.socket.io"],
+    credentials: true
+  }
+});
 
-wss.on("connection", (socket) => {
-  console.log("Connected to Browser");
-  socket["nick"] = "익명"
-  sockets.push(socket);
-  socket.on("message", (msg) => {
-    const message = JSON.parse(msg.toString('utf-8'));
-    switch (message.type) {
-        case 'new_message':
-            sockets.forEach((s) => s.send(`${socket.nick}: ${message.payload}`));
-            break;
-        case 'nickname':
-            socket["nick"] = message.payload;
-            break;
-        default :
-            console.log('defalut');
+instrument(io, {
+  auth: false
+});
+
+const publicRooms = () => {
+  const {
+    sockets: {
+      adapter: { sids, rooms },
+    },
+  } = io;
+  const publicRooms = [];
+  rooms.forEach((_, key) => {
+    if (sids.get(key) === undefined) {
+      publicRooms.push(key);
     }
   });
+  return publicRooms;
+};
 
-  socket.on("close", wsClose);
+const countRoom = (roomName) => {
+  return wsServer.sockets.adapter.rooms.get(roomName)?.size;
+}
+
+io.on("connection", (socket) => {
+  socket["nick"] = "unknown";
+  socket.onAny((event) => {
+    console.log(`Socket Event: ${event}`);
+  });
+
+  socket.on("enter_room", (roomName, callback) => {
+    socket.join(roomName);
+    callback();
+    socket.to(roomName).emit("welcome", socket.nick, countRoom(roomName));
+    io.sockets.emit("room_change", publicRooms());
+  });
+
+  socket.on("nick", (nickName) => {
+    socket["nick"] = nickName;
+  });
+
+  socket.on("req_message", (msg, roomName, callback) => {
+    socket.to(roomName).emit("res_message", `${socket.nick}: ${msg}`);
+    callback();
+  })
+
+  socket.on("disconnecting", () => {
+    socket.rooms.forEach((room) => socket.to(room).emit("bye", socket.nick, countRoom(room) - 1));
+  });
+
+  socket.on("disconnect", () => {
+    io.sockets.emit("room_change", publicRooms());
+  });
 });
