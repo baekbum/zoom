@@ -1,1 +1,1 @@
-- 0826 ~ 0827 websocket으로 채팅 (완)
+- websocket (완)
