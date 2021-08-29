@@ -1,3 +1,3 @@
 - websocket branch (완료)
-- socket.io branch (예정)
+- socket.io branch (완료)
 - webRTC branch (예정)
