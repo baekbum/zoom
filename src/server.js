@@ -1,6 +1,6 @@
 import http from "http";
 import express from "express";
-import SocketIO from "socket.io";
+import { Server } from "socket.io";
 import { instrument } from "@socket.io/admin-ui"
 
 const app = express();
@@ -13,7 +13,7 @@ app.get("/", (_, res) => res.render("home"));
 app.get("/*", (_, res) => res.redirect("/"));
 
 const server = http.createServer(app);
-const io = new SocketIO(server);
+const io = new Server(server);
 
 io.on("connection", (socket) => {
   socket.on("join_room", (roomName) => {

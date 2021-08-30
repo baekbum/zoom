@@ -13,11 +13,12 @@ let muted = false;
 let cameraOff = false;
 let roomName;
 let myPeerConnection;
+let myDataChannel;
 
 const getCameras = async () => {
     try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const cameras = devices.filter((device) => device.kind === "videoinput");
+        const devices = await navigator.mediaDevices.enumerateDevices(); // 내 기계에 있는 모든 장치들의 정보를 가져온다.
+        const cameras = devices.filter((device) => device.kind === "videoinput"); // 비디오 장비만 변수로 저장
         const currentCamera = myStream.getVideoTracks()[0];
         cameras.forEach((camera) => {
             const option = document.createElement("option");
@@ -33,7 +34,7 @@ const getCameras = async () => {
     }
 }
 
-const getMedia = async (deviceId) => {
+const getMedia = async (deviceId) => {    
     const initialConstrains = {
         audio: true,
         video: { facingMode: "user" },
@@ -44,7 +45,7 @@ const getMedia = async (deviceId) => {
     };
 
     try {
-        myStream = await navigator.mediaDevices.getUserMedia(
+        myStream = await navigator.mediaDevices.getUserMedia( // 현재 내 장비의 미디어 스트림 정보를 가져온다.
             deviceId ? cameraConstraints : initialConstrains
         );
         myFace.srcObject = myStream;
@@ -81,6 +82,13 @@ const handleCameraClick = () => {
 
 const handleCameraChange = async () => {
     await getMedia(camerasSelect.value);
+    if (myPeerConnection) {
+        const videoTrack = myStream.getVideoTracks()[0]; // 현재 바뀐 내 스트림의 비디오 트랙
+        const videoSender = myPeerConnection // 현재 peer에게 보내지고 있는 기존 스트림
+          .getSenders()
+          .find((sender) => sender.track.kind === "video");
+        videoSender.replaceTrack(videoTrack);
+    }
 }
   
 muteBtn.addEventListener("click", handleMuteClick);
@@ -111,6 +119,11 @@ welcomeForm.addEventListener("submit", handleWelcomeSubmit);
 //////////////////////////////////////////////////////////////////////
 
 socket.on("welcome", async () => {
+    // 데이터 채널 (방장)
+    myDataChannel = myPeerConnection.createDataChannel("chat");
+    myDataChannel.addEventListener("message", (event) => console.log(event.data));
+    console.log("made data channel");
+    //////////////////////////////////////////////////
     const offer = await myPeerConnection.createOffer();
     myPeerConnection.setLocalDescription(offer);
     console.log("sent the offer");
@@ -118,6 +131,15 @@ socket.on("welcome", async () => {
 });
 
 socket.on("offer", async (offer) => {
+    // 데이터 채널 (손님)
+    myPeerConnection.addEventListener("datachannel", (event) => {
+        myDataChannel = event.channel;
+        myDataChannel.addEventListener("message", (event) =>
+          console.log(event.data)
+        );
+    });
+
+    //////////////////////////////////////////////////
     console.log("received the offer");
     myPeerConnection.setRemoteDescription(offer);
     const answer = await myPeerConnection.createAnswer();
@@ -138,7 +160,19 @@ socket.on("ice", (ice) => {
 //////////////////////////////////////////////////////////////////////
 
 const makeConnection = () => {
-    myPeerConnection = new RTCPeerConnection();
+    myPeerConnection = new RTCPeerConnection({
+        iceServers: [
+          {
+            urls: [
+              "stun:stun.l.google.com:19302",
+              "stun:stun1.l.google.com:19302",
+              "stun:stun2.l.google.com:19302",
+              "stun:stun3.l.google.com:19302",
+              "stun:stun4.l.google.com:19302",
+            ],
+          },
+        ],
+    });
     myPeerConnection.addEventListener("icecandidate", handleIce);
     myPeerConnection.addEventListener("addstream", handleAddStream);
     myStream
